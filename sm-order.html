@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SM Mafia Orders</title>
+  <style>
+    :root { --primary: #00ff88; }
+    body { font-family: Arial, sans-serif; background: #0a0a0a; color: #ddd; margin: 0; padding: 15px; }
+    h1 { color: var(--primary); text-align: center; }
+    .section { background: #111; padding: 16px; border-radius: 12px; margin: 15px 0; }
+    input, select, button, textarea { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+    button { background: var(--primary); color: black; font-weight: bold; border: none; cursor: pointer; }
+    button:active { background: #00cc66; }
+    .list { max-height: 160px; overflow-y: auto; background: #1a1a1a; padding: 8px; border-radius: 8px; }
+    .item { padding: 8px; background: #222; margin: 6px 0; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; }
+    .status { padding: 12px; background: #1a1a1a; border-radius: 8px; margin: 10px 0; font-size: 15px; }
+    .log { font-size: 14px; max-height: 200px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+  <h1>🚀 Streaming Mafia Orders</h1>
+
+  <div class="section">
+    <h2>Quick Order</h2>
+    <select id="quickTemplate"></select>
+    <button onclick="quickOrder()">🔥 Quick Order Now</button>
+  </div>
+
+  <div class="section">
+    <h2>New Order</h2>
+    <input type="text" id="linkSearch" placeholder="Search links..." onkeyup="renderLinks()">
+    <select id="selectLink"></select>
+    <input type="text" id="serviceSearch" placeholder="Search services..." onkeyup="renderServices()">
+    <select id="selectService"></select>
+    <input type="number" id="quantity" value="100" min="10">
+
+    <div style="display:flex; gap:6px; flex-wrap: wrap;">
+      <button onclick="setQuantity(10)">10</button>
+      <button onclick="setQuantity(50)">50</button>
+      <button onclick="setQuantity(100)">100</button>
+      <button onclick="setQuantity(250)">250</button>
+      <button onclick="setQuantity(500)">500</button>
+      <button onclick="setQuantity(1000)">1000</button>
+    </div>
+    <button onclick="placeOrderNow()">🚀 Place Order Now</button>
+  </div>
+
+  <div class="section">
+    <h2>Links</h2>
+    <input type="text" id="linkName" placeholder="Song/Playlist Name">
+    <input type="text" id="linkUrl" placeholder="Spotify URL">
+    <button onclick="addLink()">+ Add Link</button>
+    <div id="linksList" class="list"></div>
+  </div>
+
+  <div class="section">
+    <h2>Services</h2>
+    <input type="text" id="serviceName" placeholder="Service Name">
+    <input type="text" id="serviceId" placeholder="Service ID">
+    <button onclick="addService()">+ Add Service</button>
+    <div id="servicesList" class="list"></div>
+  </div>
+
+  <div class="section">
+    <h2>Saved Templates</h2>
+    <button onclick="saveCurrentAsTemplate()">💾 Save Current as Template</button>
+    <div id="templatesList" class="list"></div>
+  </div>
+
+  <div class="section">
+    <h2>Random Scheduler</h2>
+    <p style="font-size:14px;color:#aaa;">Random timing + random quantities</p>
+    <input type="number" id="ordersPerDay" value="5" min="1" max="20">
+    <input type="number" id="minHours" value="2.5" step="0.5" min="1">
+    <input type="number" id="maxHours" value="5" step="0.5" min="1">
+    
+    <label>Quantity Range per order:</label>
+    <div style="display:flex; gap:10px;">
+      <input type="number" id="minQty" value="50" style="width:48%;">
+      <input type="number" id="maxQty" value="500" style="width:48%;">
+    </div>
+
+    <button onclick="startRandomScheduler()">▶️ Start Random Scheduler</button>
+    <button onclick="stopScheduler()">⏹️ Stop Scheduler</button>
+    <div id="scheduleStatus" class="status">Scheduler: Stopped</div>
+  </div>
+
+  <div class="section">
+    <h2>Backup & Stats</h2>
+    <button onclick="exportData()">📤 Export Backup</button>
+    <button onclick="document.getElementById('importFile').click()">📥 Import Backup</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(event)">
+    <div id="stats" class="status"></div>
+  </div>
+
+  <div class="section">
+    <h2>Order History</h2>
+    <div id="history" class="log"></div>
+    <button onclick="clearHistory()">Clear History</button>
+  </div>
+
+  <div id="status" class="status">Ready • Keep logged in to streamingmafia.com in Chrome</div>
+
+  <script>
+    let links = JSON.parse(localStorage.getItem('smLinks')) || [];
+    let services = JSON.parse(localStorage.getItem('smServices')) || [];
+    let templates = JSON.parse(localStorage.getItem('smTemplates')) || [];
+    let history = JSON.parse(localStorage.getItem('smHistory')) || [];
+    let schedulerTimeout = null;
+
+    function saveData() {
+      localStorage.setItem('smLinks', JSON.stringify(links));
+      localStorage.setItem('smServices', JSON.stringify(services));
+      localStorage.setItem('smTemplates', JSON.stringify(templates));
+      localStorage.setItem('smHistory', JSON.stringify(history));
+      renderAll();
+    }
+
+    function renderAll() {
+      renderLinks();
+      renderServices();
+      renderTemplates();
+      renderHistory();
+      updateStats();
+    }
+
+    function renderLinks() {
+      const filter = document.getElementById('linkSearch').value.toLowerCase();
+      const sel = document.getElementById('selectLink');
+      sel.innerHTML = '<option value="">Select Link</option>';
+      let html = '';
+      links.forEach((l, i) => {
+        if (l.name.toLowerCase().includes(filter)) {
+          html += `<div class="item">${l.name}<button onclick="deleteLink(${i})">Del</button></div>`;
+          sel.innerHTML += `<option value="${l.url}">${l.name}</option>`;
+        }
+      });
+      document.getElementById('linksList').innerHTML = html || '<p>No links found</p>';
+    }
+
+    function renderServices() {
+      const filter = document.getElementById('serviceSearch').value.toLowerCase();
+      const sel = document.getElementById('selectService');
+      sel.innerHTML = '<option value="">Select Service</option>';
+      let html = '';
+      services.forEach((s, i) => {
+        if (s.name.toLowerCase().includes(filter)) {
+          html += `<div class="item">${s.name} (ID:${s.id})<button onclick="deleteService(${i})">Del</button></div>`;
+          sel.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+        }
+      });
+      document.getElementById('servicesList').innerHTML = html || '<p>No services found</p>';
+    }
+
+    function renderTemplates() {
+      const sel = document.getElementById('quickTemplate');
+      sel.innerHTML = '<option value="">Select Template</option>';
+      let html = '';
+      templates.forEach((t, i) => {
+        html += `<div class="item">${t.name} <button onclick="loadTemplate(${i})">Load</button><button onclick="deleteTemplate(${i})">Del</button></div>`;
+        sel.innerHTML += `<option value="${i}">${t.name}</option>`;
+      });
+      document.getElementById('templatesList').innerHTML = html || '<p>No templates yet</p>';
+    }
+
+    function renderHistory() {
+      let html = '';
+      history.slice(-20).reverse().forEach(h => {
+        html += `<div>${h.time} | ${h.linkName} → ${h.serviceName} (${h.qty})</div>`;
+      });
+      document.getElementById('history').innerHTML = html || 'No orders yet';
+    }
+
+    function updateStats() {
+      const totalOrders = history.length;
+      const totalQty = history.reduce((sum, h) => sum + parseInt(h.qty || 0), 0);
+      document.getElementById('stats').innerHTML = `Total Orders: ${totalOrders}<br>Total Streams Ordered: ${totalQty.toLocaleString()}`;
+    }
+
+    function addLink() {
+      const name = document.getElementById('linkName').value.trim();
+      const url = document.getElementById('linkUrl').value.trim();
+      if (name && url) {
+        links.push({name, url});
+        saveData();
+        document.getElementById('linkName').value = '';
+        document.getElementById('linkUrl').value = '';
+      }
+    }
+
+    function deleteLink(i) { links.splice(i,1); saveData(); }
+    function addService() {
+      const name = document.getElementById('serviceName').value.trim();
+      const id = document.getElementById('serviceId').value.trim();
+      if (name && id) {
+        services.push({name, id});
+        saveData();
+        document.getElementById('serviceName').value = '';
+        document.getElementById('serviceId').value = '';
+      }
+    }
+    function deleteService(i) { services.splice(i,1); saveData(); }
+
+    function setQuantity(qty) { document.getElementById('quantity').value = qty; }
+
+    function placeOrderNow(randomQty = null) {
+      const linkIdx = document.getElementById('selectLink').selectedIndex - 1;
+      const serviceIdx = document.getElementById('selectService').selectedIndex - 1;
+      const qty = randomQty || document.getElementById('quantity').value;
+
+      if (linkIdx < 0 || serviceIdx < 0) {
+        document.getElementById('status').innerHTML = '❌ Select link and service';
+        return;
+      }
+
+      const link = links[linkIdx];
+      const service = services[serviceIdx];
+
+      const entry = { time: new Date().toLocaleString(), linkName: link.name, serviceName: service.name, qty: qty };
+      history.unshift(entry);
+      if (history.length > 100) history.pop();
+      saveData();
+
+      document.getElementById('status').innerHTML = `✅ Logged: ${link.name} → ${service.name} (${qty})`;
+      window.open('https://streamingmafia.com', '_blank');
+    }
+
+    function saveCurrentAsTemplate() {
+      const linkSel = document.getElementById('selectLink');
+      const serviceSel = document.getElementById('selectService');
+      const qty = document.getElementById('quantity').value;
+      if (linkSel.value && serviceSel.value) {
+        const name = prompt("Template name?", "Order " + (templates.length + 1));
+        if (name) {
+          templates.push({name, linkIdx: linkSel.selectedIndex - 1, serviceIdx: serviceSel.selectedIndex - 1, qty});
+          saveData();
+        }
+      }
+    }
+
+    function loadTemplate(i) {
+      const t = templates[i];
+      document.getElementById('selectLink').selectedIndex = t.linkIdx + 1;
+      document.getElementById('selectService').selectedIndex = t.serviceIdx + 1;
+      document.getElementById('quantity').value = t.qty;
+    }
+
+    function deleteTemplate(i) { templates.splice(i,1); saveData(); }
+
+    function quickOrder() {
+      const idx = document.getElementById('quickTemplate').value;
+      if (idx) loadTemplate(parseInt(idx));
+      placeOrderNow();
+    }
+
+    function startRandomScheduler() {
+      stopScheduler();
+      const minH = parseFloat(document.getElementById('minHours').value) || 2;
+      const maxH = parseFloat(document.getElementById('maxHours').value) || 5;
+      const minQ = parseInt(document.getElementById('minQty').value) || 50;
+      const maxQ = parseInt(document.getElementById('maxQty').value) || 500;
+
+      function scheduleNext() {
+        const delayMs = (Math.random() * (maxH - minH) + minH) * 60 * 60 * 1000;
+        const randomQty = Math.floor(Math.random() * (maxQ - minQ + 1)) + minQ;
+
+        document.getElementById('scheduleStatus').innerHTML = `✅ Running • Next in ~${(delayMs/3600000).toFixed(1)} hours (${randomQty} qty)`;
+
+        schedulerTimeout = setTimeout(() => {
+          if (links.length > 0 && services.length > 0) {
+            document.getElementById('selectLink').selectedIndex = Math.floor(Math.random() * links.length) + 1;
+            document.getElementById('selectService').selectedIndex = Math.floor(Math.random() * services.length) + 1;
+          }
+          document.getElementById('status').innerHTML = `🔔 <b>New Order Ready!</b><br>Qty: ${randomQty}`;
+          placeOrderNow(randomQty);
+          scheduleNext();
+        }, delayMs);
+      }
+      scheduleNext();
+    }
+
+    function stopScheduler() {
+      if (schedulerTimeout) clearTimeout(schedulerTimeout);
+      document.getElementById('scheduleStatus').innerHTML = '⏹️ Scheduler Stopped';
+    }
+
+    function exportData() {
+      const data = {links, services, templates, history};
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'sm-mafia-backup.json';
+      a.click();
+    }
+
+    function importData(e) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const data = JSON.parse(ev.target.result);
+        if (data.links) links = data.links;
+        if (data.services) services = data.services;
+        if (data.templates) templates = data.templates;
+        if (data.history) history = data.history;
+        saveData();
+        alert('✅ Data imported!');
+      };
+      reader.readAsText(file);
+    }
+
+    function clearHistory() {
+      if (confirm('Clear history?')) { history = []; saveData(); }
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
